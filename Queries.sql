@@ -5,6 +5,21 @@
 -- Deben utilizar la función fn_clasificar_ingreso para determinar la etiqueta del creador.
     -- ○ Columnas a mostrar: Nickname, Categoria, Total Suscriptores Activos, Monto Facturado, Clasificación (Retorno de la función).
 
+SELECT c.nickname AS "Nickname", cat.nombre AS "Categoria", SUM(s.idUsuario) AS "Total Suscriptores Activos", SUM(f.monto_total) AS "Monto Facturado", fn_clasificar_ingreso(c.idUsuario) AS "Clasificación"
+FROM Creador AS c
+LEFT JOIN Categoria AS cat ON c.idCategoria = cat.id
+LEFT JOIN NivelSuscripcion AS ns ON c.idUsuario = ns.idCreador
+LEFT JOIN Suscripcion AS s ON ns.id = s.idNivel
+LEFT JOIN Factura AS f ON s.id = f.idSuscripcion
+GROUP BY c.idUsuario, cat.nombre;
+
+-- SELECT 
+-- FROM 
+-- WHERE 
+-- GROUP BY
+-- HAVING
+-- ORDER BY ASC/DESC;
+
 -- 2. Viralidad por Categoría: Mostrar la publicación con mayor puntaje de viralidad dentro de cada Categoría.
 -- Puntaje = (Reacciones * 1.5) + (Comentarios * 3).
     -- ○ Columnas a mostrar: Nombre Categoría, Título Publicación, Creador, Puntaje Máximo.
