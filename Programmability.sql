@@ -28,6 +28,7 @@
 
 -- B. Funciones (UDF)
 
+GO
 -- 1. fn_calcular_impuesto(monto): Asumimos 16%
 CREATE FUNCTION dbo.fn_calcular_impuesto (@monto DECIMAL(10,2))
 RETURNS DECIMAL(10,2)
@@ -102,7 +103,66 @@ GO
 
 -- 1. Auditoría de Precios (Safety): Al actualizar el precio de un NivelSuscripcion, impedir que el cambio sea mayor al 50% del
 -- precio anterior (para evitar errores de dedo o fraudes). Si el cambio es brusco, cancelar la operación y levantar un error.
+GO
+
+CREATE TRIGGER trg_Auditoria_Precios
+ON NivelSuscripcion
+AFTER UPDATE
+AS
+BEGIN
+    -- Si no se actualizó ninguna fila, no hace nada
+    IF @@ROWCOUNT = 0 RETURN;
+
+    -- Solo dispara la lógica si se intentó modificar la columna precio_actual
+    IF UPDATE(precio_actual)
+    BEGIN
+        -- Verifica si existe algún registro donde la diferencia de precio supere el 50%
+        IF EXISTS (
+            SELECT 1
+            FROM inserted i
+            INNER JOIN deleted d ON i.id = d.id
+            -- Matemática: El valor absoluto de (Nuevo - Viejo) es mayor que (Viejo * 0.50)
+            WHERE ABS(i.precio_actual - d.precio_actual) > (d.precio_actual * 0.50)
+        )
+        BEGIN
+            -- Levanta el error y cancela la transacción
+            RAISERROR('El cambio de precio no puede ser mayor al 50%% del precio anterior para evitar fraudes.', 16, 1);
+            ROLLBACK TRANSACTION;
+            RETURN;
+        END
+    END
+END;
 
 -- 2. Protección de Menores (NSFW): Antes de insertar una nueva Suscripcion, verificar si el creador destino tiene marcado es_nsfw = 1.
 -- Si es así, verificar la fecha_nacimiento del usuario suscriptor. Si el usuario es menor de 18 años, cancelar la transacción y
 -- levantar un error "Contenido restringido por edad".
+GO
+
+CREATE TRIGGER trg_Proteccion_Menores
+ON Suscripcion
+AFTER INSERT
+AS
+BEGIN
+    -- Si no se insertó ninguna fila, no hace nada
+    IF @@ROWCOUNT = 0 RETURN;
+
+    -- Verifica si el usuario que intenta suscribirse es menor de 18 y el creador es NSFW
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN NivelSuscripcion ns ON i.idNivel = ns.id
+        INNER JOIN Creador c ON ns.idCreador = c.idUsuario
+        INNER JOIN Usuario u ON i.idUsuario = u.id
+        WHERE c.es_nsfw = 1
+          -- Lógica estricta de edad: Si le sumas 18 años a su fecha de nacimiento y esa fecha 
+          -- aún es mayor al día de hoy, significa que todavía no ha cumplido los 18.
+          AND DATEADD(YEAR, 18, u.fecha_nacimiento) > GETDATE()
+    )
+    BEGIN
+        -- Levanta el error exacto que pide el profesor y cancela la inserción
+        RAISERROR('Contenido restringido por edad.', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+END;
+GO
