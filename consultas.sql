@@ -1,3 +1,24 @@
+-- 1. Clasificación de Ganancias
+SELECT 
+    u.nickname AS [Nickname], 
+    cat.nombre AS [Categoria], 
+    COUNT(DISTINCT s.idUsuario) AS [Total Suscriptores Activos], 
+    ISNULL(SUM(f.monto_total), 0) AS [Monto Facturado], 
+    dbo.fn_clasificar_ingreso(c.idUsuario) AS [Clasificación]
+FROM Creador AS c
+--Agrega la tabla Usuario para sacar el nickname
+INNER JOIN Usuario AS u ON c.idUsuario = u.id
+LEFT JOIN Categoria AS cat ON c.idCategoria = cat.id
+LEFT JOIN NivelSuscripcion AS ns ON c.idUsuario = ns.idCreador
+--Filtra para que solo cuente las suscripciones activas
+LEFT JOIN Suscripcion AS s ON ns.id = s.idNivel AND s.estado = 'Activa'
+--Filtra para sumar solo las facturas del último mes exacto
+LEFT JOIN Factura AS f ON s.id = f.idSuscripcion AND DATEDIFF(MONTH, f.fecha_emision, GETDATE()) = 1
+GROUP BY 
+    c.idUsuario, 
+    u.nickname, 
+    cat.nombre;
+
 -- 2. Viralidad por Categoría
 WITH ReaccionesPorPub AS (
     SELECT idPublicacion, COUNT(idUsuario) AS TotalReacciones
@@ -200,6 +221,30 @@ GROUP BY u.nickname
 -- Filtra a los que superan el ratio de 2.0
 HAVING AVG(rp.Ratio) > 2.0;
 
+--10. Ranking de Creadores (Reputación)
+SELECT 
+    u.nickname AS [Nickname],
+    COUNT(DISTINCT s.idUsuario) AS [Total Suscriptores],
+    dbo.fn_calcular_reputacion(c.idUsuario) AS [Puntaje Reputación]
+FROM Creador c
+INNER JOIN Usuario u ON c.idUsuario = u.id
+LEFT JOIN NivelSuscripcion ns ON c.idUsuario = ns.idCreador
+LEFT JOIN Suscripcion s ON ns.id = s.idNivel
+--Filtra a los creadores que son Family Friendly
+WHERE c.es_nsfw = 0
+  --Valida que tengan contenido multimedia
+  AND EXISTS (
+      SELECT 1 
+      FROM Publicacion p 
+      WHERE p.idCreador = c.idUsuario 
+        AND p.tipo_contenido IN ('VIDEO', 'IMAGEN')
+  )
+GROUP BY 
+    c.idUsuario, 
+    u.nickname
+ORDER BY 
+    [Puntaje Reputación] DESC;
+
 -- 11. Usuarios "Lurkers" (Pagan pero no interactúan)
 WITH UsuariosInteractivos AS (
     -- Une a todos los que han comentado o reaccionado alguna vez
@@ -269,4 +314,3 @@ GROUP BY
     c.banco_nombre,
     c.banco_cuenta,
     u.nickname;
-
