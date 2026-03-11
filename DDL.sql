@@ -283,10 +283,10 @@ GO
 
 -- 2. fn_clasificar_ingreso(monto): Diamante, Oro o Plata
 CREATE FUNCTION dbo.fn_clasificar_ingreso (@monto DECIMAL(10,2))
-RETURNS VARCHAR(50)
+RETURNS NVARCHAR(50)
 AS
 BEGIN
-    DECLARE @clasificacion VARCHAR(50);
+    DECLARE @clasificacion NVARCHAR(50);
 
     IF @monto > 1000
         SET @clasificacion = 'Diamante';
