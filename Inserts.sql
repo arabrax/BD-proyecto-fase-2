@@ -30,6 +30,8 @@
 USE [FanHubDB];
 GO
 
+SET DATEFORMAT ymd;
+
 SET IDENTITY_INSERT Usuario ON;
 
 -- ============================================================
@@ -4098,7 +4100,6 @@ INSERT INTO Imagen (idPublicacion, ancho, alto, formato, alt_text, url_imagen) V
 (795, 1080, 1920, 'JPG', 'Fondos de pantalla de cuerpo entero', 'https://cdn.plataforma.com/img/795.jpg'),
 (799, 3840, 2160, 'JPG', 'Escenas cinemáticas del final sin ropa', 'https://cdn.plataforma.com/img/799.jpg');
 
-SET IDENTITY_INSERT Imagen OFF;
 
 -- =========================================================================
 -- TABLA TEXTO: Solo IDs correspondientes a 'tipo_contenido' = 'TEXTO'
@@ -7355,7 +7356,7 @@ INSERT INTO PublicacionEtiqueta (idPublicacion, idEtiqueta) VALUES
 (181, 16), (181, 17), (182, 17), (182, 18), (183, 16), (183, 49), (184, 18), (184, 50), (185, 16), (185, 17),
 (186, 17), (186, 18), (187, 16), (187, 49), (188, 18), (188, 50), (189, 16), (189, 17), (190, 17), (190, 18),
 (191, 16), (191, 49), (192, 18), (192, 50), (193, 16), (193, 17), (194, 17), (194, 18), (195, 16), (195, 49),
-(196, 18), (196, 50), (197, 16), (197, 17), (198, 17), (198, 18), (199, 16), (199, 49), (200, 18), (200, 50);
+(196, 18), (196, 50), (197, 16), (197, 17), (198, 17), (198, 18), (199, 16), (199, 49), (200, 18), (200, 50),
 
 
 -- Asociaciones para Publicaciones 201 a 400
@@ -7420,6 +7421,7 @@ INSERT INTO PublicacionEtiqueta (idPublicacion, idEtiqueta) VALUES
 
 -- Asociaciones para Publicaciones 401 a 600
 -- Pubs 401-416 (Finanzas - continuación) -> Tags 33, 34, 49, 50
+INSERT INTO PublicacionEtiqueta (idPublicacion, idEtiqueta) VALUES
 (401, 33), (401, 49), (402, 34), (402, 50), (403, 33), (403, 34), (404, 33), (404, 50), (405, 34), (405, 49),
 (406, 33), (406, 34), (407, 33), (407, 50), (408, 34), (408, 49), (409, 33), (409, 34), (410, 33), (410, 50),
 (411, 34), (411, 49), (412, 33), (412, 34), (413, 33), (413, 50), (414, 34), (414, 49), (415, 33), (415, 34),
@@ -7475,7 +7477,7 @@ INSERT INTO PublicacionEtiqueta (idPublicacion, idEtiqueta) VALUES
 (582, 44), (582, 49), (583, 44), (583, 50), (584, 44), (584, 49), (585, 44), (585, 50), (586, 44), (586, 49),
 (587, 44), (587, 50), (588, 44), (588, 49), (589, 44), (589, 50), (590, 44), (590, 49), (591, 44), (591, 50),
 (592, 44), (592, 49), (593, 44), (593, 50), (594, 44), (594, 49), (595, 44), (595, 50), (596, 44), (596, 49),
-(597, 44), (597, 50), (598, 44), (598, 49), (599, 44), (599, 50), (600, 44), (600, 49);
+(597, 44), (597, 50), (598, 44), (598, 49), (599, 44), (599, 50), (600, 44), (600, 49),
 
 
 -- Asociaciones para Publicaciones 601 a 800
