@@ -217,3 +217,74 @@ CREATE TABLE PublicacionEtiqueta (
     CONSTRAINT FK_PE_Publicacion FOREIGN KEY (idPublicacion) REFERENCES Publicacion(id),
     CONSTRAINT FK_PE_Etiqueta FOREIGN KEY (idEtiqueta) REFERENCES Etiqueta(id)
 );
+
+-- FUNCIONES
+GO
+
+-- función para clasificar el ingreso mensual
+CREATE FUNCTION dbo.fn_clasificar_ingreso (@idCreador INT)
+RETURNS VARCHAR(50)
+AS
+BEGIN
+    DECLARE @TotalMensual DECIMAL(10,2);
+    DECLARE @Categoria VARCHAR(50);
+
+    --Calcula la suma total de las facturas del último mes para el creador recibido
+    SELECT @TotalMensual = ISNULL(SUM(f.monto_total), 0)
+    FROM NivelSuscripcion ns
+    INNER JOIN Suscripcion s ON ns.id = s.idNivel
+    INNER JOIN Factura f ON s.id = f.idSuscripcion
+    WHERE ns.idCreador = @idCreador
+      --Filtra exactamente hace 1 mes
+      AND DATEDIFF(MONTH, f.fecha_emision, GETDATE()) = 1;
+
+    --Evalua el total para asignar la etiqueta (Rangos asumidos por regla F)
+    IF @TotalMensual = 0
+        SET @Categoria = 'Sin Ingresos';
+    ELSE IF @TotalMensual < 1000
+        SET @Categoria = 'Bronce';
+    ELSE IF @TotalMensual < 5000
+        SET @Categoria = 'Plata';
+    ELSE
+        SET @Categoria = 'Oro';
+
+    RETURN @Categoria;
+END;
+GO
+
+--FUNCION: Calcular Reputación
+GO
+-- funcion que calcula los puntos de reputacion
+CREATE FUNCTION dbo.fn_calcular_reputacion (@idCreador INT)
+RETURNS INT
+AS
+BEGIN
+    DECLARE @Puntaje INT = 0;
+    DECLARE @TotalReacciones INT = 0;
+    DECLARE @TotalComentarios INT = 0;
+    DECLARE @TotalSuscriptores INT = 0;
+
+    --Calcula suscriptores activos (10 puntos c/u)
+    SELECT @TotalSuscriptores = COUNT(DISTINCT s.idUsuario)
+    FROM NivelSuscripcion ns
+    INNER JOIN Suscripcion s ON ns.id = s.idNivel
+    WHERE ns.idCreador = @idCreador AND s.estado = 'Activa';
+
+    --Calcula reacciones totales recibidas (1 punto c/u)
+    SELECT @TotalReacciones = COUNT(urp.idUsuario)
+    FROM Publicacion p
+    INNER JOIN UsuarioReaccionPublicacion urp ON p.id = urp.idPublicacion
+    WHERE p.idCreador = @idCreador;
+
+    --Calcula comentarios totales recibidos (3 puntos c/u)
+    SELECT @TotalComentarios = COUNT(c.id)
+    FROM Publicacion p
+    INNER JOIN Comentario c ON p.id = c.idPublicacion
+    WHERE p.idCreador = @idCreador;
+
+    -- la formula matematica
+    SET @Puntaje = (@TotalSuscriptores * 10) + (@TotalReacciones * 1) + (@TotalComentarios * 3);
+
+    RETURN ISNULL(@Puntaje, 0);
+END;
+GO
