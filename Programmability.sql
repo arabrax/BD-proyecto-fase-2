@@ -1,10 +1,76 @@
 -- A. Procedimientos Almacenados (Stored Procedures o SPs)
 
+-- 4. sp_generar_factura_pago: Recibe idSuscripcion.
+--     ○ Este procedimiento simula el ciclo de facturación mensual o renovación.
+--     ○ Debe calcular los montos: El sub_total. El impuesto se calcula invocando a la función fn_calcular_impuesto. El total es la
+--     suma de ambos.
+--     ○ Debe generar el codigo_transaccion concatenando (separando con un guión cada cosa):
+--     La fecha actual (formato YYYYMMDD) + ID Usuario + ID Suscripción + ID Nivel + ID Creador. Ej: 20260205-105-88-2-15
+--     ○ Debe insertar el registro en la tabla Factura con la fecha y hora del sistema.
+
+CREATE OR ALTER PROCEDURE sp_generar_factura_pago
+    @idSuscripcion int
+AS
+BEGIN
+
+    INSERT INTO Factura (idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total) VALUES (
+        @idSuscripcion,
+        CONCAT( -- Codigo Transaccion
+            CONVERT(char(10), CURRENT_DATE, 112)), '-', -- 112: Estándar ISO para fecha en formato YYYYMMDD
+            (SELECT idUsuario FROM Suscripcion WHERE @idSuscripcion = id), '-',
+            (SELECT id FROM Suscripcion WHERE @idSuscripcion = id), '-',
+            (SELECT idNivel FROM Suscripcion WHERE @idSuscripcion = id), '-',
+            (SELECT ns.idCreador FROM Suscripcion s LEFT JOIN NivelSuscripcion ns ON s.idNivel = ns.id WHERE @idSuscripcion = id),
+        GETDATE(),
+        (SELECT precio_pactado FROM Suscripcion WHERE @idSuscripcion = id),
+        dbo.fn_calcular_impuesto((SELECT precio_pactado FROM Suscripcion WHERE @idSuscripcion = id)),
+        (SELECT precio_pactado FROM Suscripcion WHERE @idSuscripcion = id)+dbo.fn_calcular_impuesto((SELECT precio_pactado FROM Suscripcion WHERE @idSuscripcion = id))
+    )
+
+    -- 5. NivelSuscripcion (id, idCreador, nombre, descripcion, precio_actual, esta_activo, orden)
+    -- 6. Suscripcion (id, idUsuario, idNivel, fecha_inicio, fecha_renovacion, fecha_fin, estado, precio_pactado)
+    -- 	○ Estados posibles: 'Activa', 'Cancelada', 'Vencida'.
+-- 7. Factura (id, idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total)
+END;
+
+GO;
+
 -- 1. sp_crear_suscripcion: Recibe idUsuario, idNivel y idMetodoPago.
 --     ○ Debe validar que el usuario no tenga ya una suscripción activa con ese creador.
 --     ○ Debe insertar la suscripción con estado 'Activa' y precio_pactado igual al precio actual del nivel.
 --     ○ Debe generar automáticamente la primera factura asociada.
 --     ○ Manejar transacciones (BEGIN TRAN, COMMIT, ROLLBACK) para asegurar la integridad.
+
+
+CREATE OR ALTER PROCEDURE sp_crear_suscripcion
+    @idUsuario INT,
+    @idNivel INT,
+    @idMetodoPago INT
+AS
+BEGIN
+
+    -- Revisión de si existe una suscripción previa del usuario a ese creador
+    IF EXISTS (
+        SELECT *
+        FROM Suscripcion s
+        LEFT JOIN NivelSuscripcion AS ns ON s.idNivel = ns.id
+        WHERE s.idUsuario = @idUsuario
+            AND (IS NOT NULL (SELECT idCreador FROM NivelSuscripcion WHERE id = @idNivel))
+        )
+    END; -- En caso de haber, el procedimiento termina
+
+    -- Inserción de la suscripción. Para la fecha de renovación, se toma la actual + 25 días.
+        -- Para fecha de fin, es al mes exacto.
+    INSERT INTO Suscripcion (idUsuario, idNivel, fecha_inicio, fecha_renovacion, fecha_fin, estado, precio_pactado)
+    VALUES
+        (@idUsuario, @idNivel, CURRENT_DATE, DATEADD(DAY, 25, CURRENT_DATE), DATEADD(MONTH, 1, CURRENT_DATE), 'Activa', (SELECT precio_actual FROM NivelSuscripcion WHERE id = @idNivel));
+    
+    -- Generación de la primera factura a través del Stored Procedure 4.
+    sp_generar_factura_pago(SELECT idSuscripcion FROM SUSCRIPCION WHERE @idUsuario = idUsuario AND @idNivel = idNivel);
+
+END;
+GO;
+
 
 -- 2. sp_dashboard_creador: Recibe un idCreador y un rango de fechas. Devuelve tres resultados:
 --     ○ Tabla 1: Resumen de KPIs (Total Ganado, Total Nuevos Subs).
@@ -17,14 +83,6 @@
 --     ○ Debe procesar las etiquetas: buscar si existen en la tabla Etiqueta (si no, crearlas) e insertar las relaciones en
 --     PublicacionEtiqueta.
 --     ○ Todo debe ocurrir dentro de una transacción atómica.
-
--- 4. sp_generar_factura_pago: Recibe idSuscripcion.
---     ○ Este procedimiento simula el ciclo de facturación mensual o renovación.
---     ○ Debe calcular los montos: El sub_total. El impuesto se calcula invocando a la función fn_calcular_impuesto. El total es la
---     suma de ambos.
---     ○ Debe generar el codigo_transaccion concatenando (separando con un guión cada cosa):
---     La fecha actual (formato YYYYMMDD) + ID Usuario + ID Suscripción + ID Nivel + ID Creador. Ej: 20260205-105-88-2-15
---     ○ Debe insertar el registro en la tabla Factura con la fecha y hora del sistema.
 
 -- B. Funciones (UDF)
 
