@@ -1,10 +1,11 @@
--- 1. Clasificación de Ganancias
+--1. Clasificación de Ganancias
 SELECT 
     u.nickname AS [Nickname], 
     cat.nombre AS [Categoria], 
     COUNT(DISTINCT s.idUsuario) AS [Total Suscriptores Activos], 
     ISNULL(SUM(f.monto_total), 0) AS [Monto Facturado], 
-    dbo.fn_clasificar_ingreso(c.idUsuario) AS [Clasificación]
+    --Le pasamos el monto exacto facturado a la función para que evalúe si es Diamante, Oro o Plata
+    dbo.fn_clasificar_ingreso(ISNULL(SUM(f.monto_total), 0)) AS [Clasificación]
 FROM Creador AS c
 --Agrega la tabla Usuario para sacar el nickname
 INNER JOIN Usuario AS u ON c.idUsuario = u.id
@@ -314,3 +315,4 @@ GROUP BY
     c.banco_nombre,
     c.banco_cuenta,
     u.nickname;
+
