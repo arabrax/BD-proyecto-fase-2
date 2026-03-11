@@ -265,7 +265,3 @@ CREATE TABLE PublicacionEtiqueta (
     CONSTRAINT FK_PE_Publicacion FOREIGN KEY (idPublicacion) REFERENCES Publicacion(id),
     CONSTRAINT FK_PE_Etiqueta FOREIGN KEY (idEtiqueta) REFERENCES Etiqueta(id)
 );
-
-GO
-
-
