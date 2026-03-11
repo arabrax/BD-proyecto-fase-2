@@ -27,7 +27,7 @@
 -- H. Etiquetas: Generar e insertar al menos 50 etiquetas distintas y asociarlas aleatoriamente a las publicaciones.
 
 
-USE [NombreDeSuBaseDeDatos];
+USE [FanHubDB];
 GO
 
 SET IDENTITY_INSERT Usuario ON;

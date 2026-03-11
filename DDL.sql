@@ -29,6 +29,15 @@
 -- 15. Etiqueta (id, nombre)
 -- 16. PublicacionEtiqueta (idPublicacion, idEtiqueta)
 
+---creacion de la base de datos
+
+CREATE DATABASE [FanHubDB];
+GO
+
+USE [FanHubDB];
+GO
+
+
 -- 1. Tabla Usuario
 CREATE TABLE Usuario (
     id INT IDENTITY(1,1) PRIMARY KEY, -- (1,1) para que sea autoincremental
