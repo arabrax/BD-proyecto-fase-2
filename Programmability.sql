@@ -69,6 +69,7 @@ BEGIN
     sp_generar_factura_pago(SELECT idSuscripcion FROM SUSCRIPCION WHERE @idUsuario = idUsuario AND @idNivel = idNivel);
 
 END;
+
 GO;
 
 
@@ -77,12 +78,32 @@ GO;
 --     ○ Tabla 2: Listado de sus 5 fans más activos (más comentarios/likes).
 --     ○ Tabla 3: Publicación con mejor rendimiento en el periodo.
 
+CREATE OR ALTER PROCEDURE sp_dashboard_creador
+    @idCreador INT,
+    @fechaInicio DATE,
+    @fechaFinal DATE
+AS
+BEGIN
+
+END;
+
+GO;
+
 -- 3. sp_publicar_con_etiquetas: Recibe los datos de una publicación (título, tipo, etc.) y una cadena de texto con las etiquetas
 -- separadas por comas (ej: "Gaming,RPG,Retro").
 --     ○ Debe insertar la publicación en la tabla correspondiente (Video, Texto, etc.).
 --     ○ Debe procesar las etiquetas: buscar si existen en la tabla Etiqueta (si no, crearlas) e insertar las relaciones en
 --     PublicacionEtiqueta.
 --     ○ Todo debe ocurrir dentro de una transacción atómica.
+
+CREATE OR ALTER PROCEDURE sp_publicar_con_etiquetas
+    
+AS
+BEGIN
+
+END;
+
+GO;
 
 -- B. Funciones (UDF)
 
