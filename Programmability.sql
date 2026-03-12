@@ -77,17 +77,95 @@ GO;
 --     ○ Tabla 1: Resumen de KPIs (Total Ganado, Total Nuevos Subs).
 --     ○ Tabla 2: Listado de sus 5 fans más activos (más comentarios/likes).
 --     ○ Tabla 3: Publicación con mejor rendimiento en el periodo.
+GO
 
-CREATE OR ALTER PROCEDURE sp_dashboard_creador
+-- SP: Dashboard del Creador
+CREATE PROCEDURE dbo.sp_dashboard_creador
     @idCreador INT,
-    @fechaInicio DATE,
-    @fechaFinal DATE
+    @fecha_inicio DATETIME,
+    @fecha_fin DATETIME
 AS
 BEGIN
+    --Evita mensajes molestos de "filas afectadas" en la consola para mayor velocidad
+    SET NOCOUNT ON;
+
+    -- ==========================================
+    -- TABLA 1: Resumen de KPIs
+    -- ==========================================
+    SELECT 
+        --Total Ganado: Suma de facturas en el rango de fechas
+        (SELECT ISNULL(SUM(f.monto_total), 0)
+         FROM Factura f
+         INNER JOIN Suscripcion s ON f.idSuscripcion = s.id
+         INNER JOIN NivelSuscripcion ns ON s.idNivel = ns.id
+         WHERE ns.idCreador = @idCreador 
+           AND f.fecha_emision BETWEEN @fecha_inicio AND @fecha_fin) AS [Total Ganado],
+           
+        --Total Nuevos Subs: Suscripciones iniciadas en el rango de fechas
+        (SELECT COUNT(s.id)
+         FROM Suscripcion s
+         INNER JOIN NivelSuscripcion ns ON s.idNivel = ns.id
+         WHERE ns.idCreador = @idCreador 
+           AND s.fecha_inicio BETWEEN @fecha_inicio AND @fecha_fin) AS [Total Nuevos Subs];
+
+    -- ==========================================
+    -- TABLA 2: 5 Fans más activos (Comentarios + Likes)
+    -- ==========================================
+    --Usamos un CTE con UNION ALL para juntar todo el rastro de actividad
+    WITH Interacciones AS (
+        --Buscamos comentarios en el rango
+        SELECT c.idUsuario
+        FROM Comentario c
+        INNER JOIN Publicacion p ON c.idPublicacion = p.id
+        WHERE p.idCreador = @idCreador AND c.fecha BETWEEN @fecha_inicio AND @fecha_fin
+        
+        UNION ALL
+        
+        --Buscamos reacciones en el rango
+        SELECT urp.idUsuario
+        FROM UsuarioReaccionPublicacion urp
+        INNER JOIN Publicacion p ON urp.idPublicacion = p.id
+        WHERE p.idCreador = @idCreador AND urp.fecha_reaccion BETWEEN @fecha_inicio AND @fecha_fin
+    )
+    SELECT TOP 5
+        u.nickname AS [Fan Destacado],
+        COUNT(i.idUsuario) AS [Total Interacciones]
+    FROM Interacciones i
+    INNER JOIN Usuario u ON i.idUsuario = u.id
+    GROUP BY u.nickname
+    ORDER BY [Total Interacciones] DESC;
+
+    -- ==========================================
+    -- TABLA 3: Publicación con mejor rendimiento en el periodo
+    -- ==========================================
+    --Calculamos las interacciones que ocurrieron ESTRICTAMENTE en ese rango de fechas
+    WITH ReaccionesPeriodo AS (
+        SELECT idPublicacion, COUNT(idUsuario) AS TotalReacciones
+        FROM UsuarioReaccionPublicacion
+        WHERE fecha_reaccion BETWEEN @fecha_inicio AND @fecha_fin
+        GROUP BY idPublicacion
+    ),
+    ComentariosPeriodo AS (
+        SELECT idPublicacion, COUNT(id) AS TotalComentarios
+        FROM Comentario
+        WHERE fecha BETWEEN @fecha_inicio AND @fecha_fin
+        GROUP BY idPublicacion
+    )
+    SELECT TOP 1
+        p.titulo AS [Título Publicación],
+        p.tipo_contenido AS [Tipo],
+        --Reutilizamos la fórmula de viralidad del profesor: (Reacciones * 1.5) + (Comentarios * 3)
+        (ISNULL(r.TotalReacciones, 0) * 1.5) + (ISNULL(c.TotalComentarios, 0) * 3.0) AS [Puntaje Rendimiento]
+    FROM Publicacion p
+    LEFT JOIN ReaccionesPeriodo r ON p.id = r.idPublicacion
+    LEFT JOIN ComentariosPeriodo c ON p.id = c.idPublicacion
+    WHERE p.idCreador = @idCreador
+      --Filtramos para que solo evalúe posts que sí tuvieron movimiento en esos días
+      AND (r.TotalReacciones > 0 OR c.TotalComentarios > 0)
+    ORDER BY [Puntaje Rendimiento] DESC;
 
 END;
-
-GO;
+GO
 
 -- 3. sp_publicar_con_etiquetas: Recibe los datos de una publicación (título, tipo, etc.) y una cadena de texto con las etiquetas
 -- separadas por comas (ej: "Gaming,RPG,Retro").
