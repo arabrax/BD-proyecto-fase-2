@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 -- Deben entregar el script SQL para generar los siguientes reportes.
 -- Importante: Se evaluará que el resultado coincida exactamente con las columnas solicitadas.
 
@@ -56,6 +57,9 @@ USE [FanHubDB];
 GO
 
     --1. Clasificación de Ganancias
+=======
+--1. Clasificación de Ganancias
+>>>>>>> 9a09f76813111b942637970b34308643b1e0f3cd
 SELECT 
     u.nickname AS [Nickname], 
     cat.nombre AS [Categoria], 
@@ -372,4 +376,3 @@ GROUP BY
     c.banco_nombre,
     c.banco_cuenta,
     u.nickname;
-
