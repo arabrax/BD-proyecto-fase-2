@@ -7536,5 +7536,51 @@ INSERT INTO PublicacionEtiqueta (idPublicacion, idEtiqueta) VALUES
 (779, 1), (779, 50), (780, 3), (780, 49), (781, 1), (781, 50), (782, 3), (782, 49), (783, 1), (783, 50),
 (784, 3), (784, 49), (785, 1), (785, 50), (786, 3), (786, 49), (787, 1), (787, 50), (788, 3), (788, 49),
 (789, 1), (789, 50), (790, 3), (790, 49), (791, 1), (791, 50), (792, 3), (792, 49), (793, 1), (793, 50),
-(794, 3), (794, 49), (795, 1), (795, 50), (796, 3), (796, 49), (797, 1), (797, 50), (798, 3), (798, 49),
 (799, 1), (799, 50), (800, 3), (800, 49);
+
+-- ====================================================================
+-- INYECCIÓN DE DATOS EXTRA PARA LAS CONSULTAS 7 (INTERESES) Y 14 (NÓMINA)
+-- ====================================================================
+
+-- 1. UsuariosIntereses (Consulta 7): Usuario con gasto histórico > 140 en Tecnología y Fitness
+DECLARE @idNivTec INT = (SELECT TOP 1 ns.id FROM NivelSuscripcion ns JOIN Creador c ON ns.idCreador = c.idUsuario JOIN Categoria cat ON c.idCategoria = cat.id WHERE cat.nombre = 'Tecnología');
+DECLARE @idNivFit INT = (SELECT TOP 1 ns.id FROM NivelSuscripcion ns JOIN Creador c ON ns.idCreador = c.idUsuario JOIN Categoria cat ON c.idCategoria = cat.id WHERE cat.nombre = 'Fitness');
+
+IF @idNivTec IS NOT NULL AND @idNivFit IS NOT NULL
+BEGIN
+    -- Crear suscripciones para el Usuario 1 omitiendo IDENTITY para prevenir errores
+    INSERT INTO Suscripcion (idUsuario, idNivel, fecha_inicio, estado, precio_pactado) VALUES (1, @idNivTec, GETDATE(), 'Activa', 100.00);
+    DECLARE @idSub1 INT = SCOPE_IDENTITY();
+    
+    INSERT INTO Suscripcion (idUsuario, idNivel, fecha_inicio, estado, precio_pactado) VALUES (1, @idNivFit, GETDATE(), 'Activa', 100.00);
+    DECLARE @idSub2 INT = SCOPE_IDENTITY();
+
+    -- Facturas por $116 (Subtotal 100 + 16 de impuesto) * 2 = 232 USD (Supera los 140 de filtro)
+    INSERT INTO Factura (idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total)
+    VALUES (@idSub1, CONCAT('TXN-EXTRA-1-', CAST(NEWID() AS VARCHAR(36))), GETDATE(), 100.00, 16.00, 116.00);
+
+    INSERT INTO Factura (idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total)
+    VALUES (@idSub2, CONCAT('TXN-EXTRA-2-', CAST(NEWID() AS VARCHAR(36))), GETDATE(), 100.00, 16.00, 116.00);
+END
+GO
+
+-- 2. Nómina del Mes Actual (Consulta 14): Inyectar 10 Facturas de prueba con la fecha de HOY
+DECLARE @idSubHoy INT;
+DECLARE @conteo INT = 0;
+-- Buscamos 10 suscripciones que esten activas
+DECLARE cur_Subs CURSOR FOR SELECT TOP 10 id FROM Suscripcion WHERE estado = 'Activa';
+OPEN cur_Subs;
+FETCH NEXT FROM cur_Subs INTO @idSubHoy;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    INSERT INTO Factura (idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total)
+    VALUES (@idSubHoy, CAST(NEWID() AS VARCHAR(40)), GETDATE(), 50.00, 8.00, 58.00);
+    
+    SET @conteo = @conteo + 1;
+    FETCH NEXT FROM cur_Subs INTO @idSubHoy;
+END
+
+CLOSE cur_Subs;
+DEALLOCATE cur_Subs;
+GO

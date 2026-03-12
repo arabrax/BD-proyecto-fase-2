@@ -52,6 +52,8 @@
     -- ○ Columnas a mostrar: Nombre Banco, Cuenta Bancaria, Beneficiario (Nickname), Total Facturado (Bruto), Comisión FanHub,
     -- Monto a Transferir (Neto).
 
+USE [FanHubDB];
+GO
 
     --1. Clasificación de Ganancias
 SELECT 

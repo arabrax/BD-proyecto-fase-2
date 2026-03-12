@@ -1,3 +1,80 @@
+USE [FanHubDB];
+GO
+
+-- B. Funciones (UDF)
+
+GO
+-- 1. fn_calcular_impuesto(monto): Asumimos 16%
+CREATE OR ALTER FUNCTION dbo.fn_calcular_impuesto (@monto DECIMAL(10,2))
+RETURNS DECIMAL(10,2)
+AS
+BEGIN
+    DECLARE @impuesto DECIMAL(10,2);
+    -- 16% se multiplica por 0.16
+    SET @impuesto = @monto * 0.16;
+    RETURN ISNULL(@impuesto, 0);
+END;
+GO
+
+-- 2. fn_clasificar_ingreso(monto): Diamante, Oro o Plata
+CREATE OR ALTER FUNCTION dbo.fn_clasificar_ingreso (@monto DECIMAL(10,2))
+RETURNS NVARCHAR(50)
+AS
+BEGIN
+    DECLARE @clasificacion NVARCHAR(50);
+
+    IF @monto > 1000
+        SET @clasificacion = 'Diamante';
+    ELSE IF @monto > 500
+        SET @clasificacion = 'Oro';
+    ELSE
+        SET @clasificacion = 'Plata';
+
+    RETURN @clasificacion;
+END;
+GO
+
+-- 3. fn_calcular_reputacion(idCreador): Fórmula con tope de 100
+CREATE OR ALTER FUNCTION dbo.fn_calcular_reputacion (@idCreador INT)
+RETURNS DECIMAL(10,2)
+AS
+BEGIN
+    DECLARE @suscriptorTotal INT = 0;
+    DECLARE @reaccionesTotalUltMes INT = 0;
+    DECLARE @antiguedadMeses INT = 0;
+    DECLARE @reputacion DECIMAL(10,2) = 0;
+
+    -- Total Suscriptores (Contamos IDs distintos)
+    SELECT @suscriptorTotal = COUNT(DISTINCT s.idUsuario)
+    FROM NivelSuscripcion ns
+    INNER JOIN Suscripcion s ON ns.id = s.idNivel
+    WHERE ns.idCreador = @idCreador AND s.estado = 'Activa';
+
+    -- Total Reacciones Último Mes
+    SELECT @reaccionesTotalUltMes = COUNT(urp.idUsuario)
+    FROM Publicacion p
+    INNER JOIN UsuarioReaccionPublicacion urp ON p.id = urp.idPublicacion
+    WHERE p.idCreador = @idCreador 
+      AND DATEDIFF(MONTH, urp.fecha_reaccion, GETDATE()) = 0;
+
+    -- Antigüedad Meses
+    SELECT @antiguedadMeses = DATEDIFF(MONTH, u.fecha_registro, GETDATE())
+    FROM Creador c
+    INNER JOIN Usuario u ON c.idUsuario = u.id
+    WHERE c.idUsuario = @idCreador;
+
+    -- Fórmula matemática
+    SET @reputacion = (@suscriptorTotal * 0.5) + (@reaccionesTotalUltMes * 0.1) + (@antiguedadMeses * 2.0);
+
+    -- Tope máximo de 100 puntos
+    IF @reputacion > 100.00
+        SET @reputacion = 100.00;
+
+    RETURN ISNULL(@reputacion, 0);
+END;
+GO
+
+
 -- A. Procedimientos Almacenados (Stored Procedures o SPs)
 
 -- 4. sp_generar_factura_pago: Recibe idSuscripcion.
@@ -9,31 +86,55 @@
 --     ○ Debe insertar el registro en la tabla Factura con la fecha y hora del sistema.
 
 CREATE OR ALTER PROCEDURE sp_generar_factura_pago
-    @idSuscripcion int
+    @idSuscripcion INT
 AS
 BEGIN
+    SET NOCOUNT ON;
 
-    INSERT INTO Factura (idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total) VALUES (
+    DECLARE @idUsuario INT, @idNivel INT, @idCreador INT;
+    DECLARE @precio_pactado DECIMAL(10,2);
+    DECLARE @impuesto DECIMAL(10,2);
+    DECLARE @codigo_transaccion VARCHAR(100);
+
+    -- Obtenemos los datos necesarios de la suscripción
+    SELECT 
+        @idUsuario = s.idUsuario,
+        @idNivel = s.idNivel,
+        @idCreador = ns.idCreador,
+        @precio_pactado = s.precio_pactado
+    FROM Suscripcion s
+    LEFT JOIN NivelSuscripcion ns ON s.idNivel = ns.id
+    WHERE s.id = @idSuscripcion;
+
+    -- Calculamos el impuesto
+    SET @impuesto = dbo.fn_calcular_impuesto(@precio_pactado);
+
+    -- Generamos el código concatenando los valores (Ej: YYYYMMDD-UsuID-SubID-LvlID-CreaID)
+    SET @codigo_transaccion = CONCAT(
+        CONVERT(VARCHAR(8), GETDATE(), 112), '-',
+        CAST(@idUsuario AS VARCHAR), '-',
+        CAST(@idSuscripcion AS VARCHAR), '-',
+        CAST(@idNivel AS VARCHAR), '-',
+        CAST(@idCreador AS VARCHAR)
+    );
+
+    -- Insertamos el registro
+    INSERT INTO Factura (idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total) 
+    VALUES (
         @idSuscripcion,
-        CONCAT( -- Codigo Transaccion
-            CONVERT(char(10), CURRENT_DATE, 112)), '-', -- 112: Estándar ISO para fecha en formato YYYYMMDD
-            (SELECT idUsuario FROM Suscripcion WHERE @idSuscripcion = id), '-',
-            (SELECT id FROM Suscripcion WHERE @idSuscripcion = id), '-',
-            (SELECT idNivel FROM Suscripcion WHERE @idSuscripcion = id), '-',
-            (SELECT ns.idCreador FROM Suscripcion s LEFT JOIN NivelSuscripcion ns ON s.idNivel = ns.id WHERE @idSuscripcion = id),
+        @codigo_transaccion,
         GETDATE(),
-        (SELECT precio_pactado FROM Suscripcion WHERE @idSuscripcion = id),
-        dbo.fn_calcular_impuesto((SELECT precio_pactado FROM Suscripcion WHERE @idSuscripcion = id)),
-        (SELECT precio_pactado FROM Suscripcion WHERE @idSuscripcion = id)+dbo.fn_calcular_impuesto((SELECT precio_pactado FROM Suscripcion WHERE @idSuscripcion = id))
-    )
+        @precio_pactado,
+        @impuesto,
+        @precio_pactado + @impuesto
+    );
 
     -- 5. NivelSuscripcion (id, idCreador, nombre, descripcion, precio_actual, esta_activo, orden)
     -- 6. Suscripcion (id, idUsuario, idNivel, fecha_inicio, fecha_renovacion, fecha_fin, estado, precio_pactado)
     -- 	○ Estados posibles: 'Activa', 'Cancelada', 'Vencida'.
--- 7. Factura (id, idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total)
+    -- 7. Factura (id, idSuscripcion, codigo_transaccion, fecha_emision, sub_total, monto_impuesto, monto_total)
 END;
-
-GO;
+GO
 
 -- 1. sp_crear_suscripcion: Recibe idUsuario, idNivel y idMetodoPago.
 --     ○ Debe validar que el usuario no tenga ya una suscripción activa con ese creador.
@@ -48,29 +149,69 @@ CREATE OR ALTER PROCEDURE sp_crear_suscripcion
     @idMetodoPago INT
 AS
 BEGIN
+    SET NOCOUNT ON;
 
-    -- Revisión de si existe una suscripción previa del usuario a ese creador
+    DECLARE @idCreador INT;
+    DECLARE @precio_actual DECIMAL(10,2);
+    DECLARE @idSuscripcionInsertada INT;
+
+    -- Obtenemos los datos del nivel de suscripción deseado
+    SELECT @idCreador = idCreador, @precio_actual = precio_actual
+    FROM NivelSuscripcion
+    WHERE id = @idNivel;
+
+    -- Verificamos que el usuario no tenga ya una suscripción activa con ese creador
     IF EXISTS (
-        SELECT *
+        SELECT 1
         FROM Suscripcion s
-        LEFT JOIN NivelSuscripcion AS ns ON s.idNivel = ns.id
+        INNER JOIN NivelSuscripcion ns ON s.idNivel = ns.id
         WHERE s.idUsuario = @idUsuario
-            AND (IS NOT NULL (SELECT idCreador FROM NivelSuscripcion WHERE id = @idNivel))
-        )
-    END; -- En caso de haber, el procedimiento termina
+          AND ns.idCreador = @idCreador
+          AND s.estado = 'Activa'
+    )
+    BEGIN
+        RAISERROR('El usuario ya tiene una suscripción activa con este creador.', 16, 1);
+        RETURN;
+    END
 
-    -- Inserción de la suscripción. Para la fecha de renovación, se toma la actual + 25 días.
-        -- Para fecha de fin, es al mes exacto.
-    INSERT INTO Suscripcion (idUsuario, idNivel, fecha_inicio, fecha_renovacion, fecha_fin, estado, precio_pactado)
-    VALUES
-        (@idUsuario, @idNivel, CURRENT_DATE, DATEADD(DAY, 25, CURRENT_DATE), DATEADD(MONTH, 1, CURRENT_DATE), 'Activa', (SELECT precio_actual FROM NivelSuscripcion WHERE id = @idNivel));
-    
-    -- Generación de la primera factura a través del Stored Procedure 4.
-    sp_generar_factura_pago(SELECT idSuscripcion FROM SUSCRIPCION WHERE @idUsuario = idUsuario AND @idNivel = idNivel);
+    -- Inicio Transacción para procesar la nueva suscripción y su factura
+    BEGIN TRY
+        BEGIN TRANSACTION;
 
+        -- Inserción de la suscripción.
+        -- Para la fecha de renovación, se suman 25 días. Para fecha de fin, se le suma 1 mes exacto.
+        INSERT INTO Suscripcion (idUsuario, idNivel, fecha_inicio, fecha_renovacion, fecha_fin, estado, precio_pactado)
+        VALUES (
+            @idUsuario, 
+            @idNivel, 
+            GETDATE(), 
+            DATEADD(DAY, 25, GETDATE()), 
+            DATEADD(MONTH, 1, GETDATE()), 
+            'Activa', 
+            @precio_actual
+        );
+
+        -- Capturamos el ID de suscripción recién insertado
+        SET @idSuscripcionInsertada = SCOPE_IDENTITY();
+
+        -- Generación de la primera factura a través del Stored Procedure 4
+        EXEC dbo.sp_generar_factura_pago @idSuscripcion = @idSuscripcionInsertada;
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        -- Si ocurre un error revierte ambas operaciones (Inserción de Suscripción + Creación de factura)
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+
+        RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
+    END CATCH
 END;
-
-GO;
+GO
 
 
 -- 2. sp_dashboard_creador: Recibe un idCreador y un rango de fechas. Devuelve tres resultados:
@@ -80,7 +221,7 @@ GO;
 GO
 
 -- SP: Dashboard del Creador
-CREATE PROCEDURE dbo.sp_dashboard_creador
+CREATE OR ALTER PROCEDURE dbo.sp_dashboard_creador
     @idCreador INT,
     @fecha_inicio DATETIME,
     @fecha_fin DATETIME
@@ -295,81 +436,8 @@ BEGIN
         RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
     END CATCH
 END;
-
-GO;
-
--- B. Funciones (UDF)
-
-GO
--- 1. fn_calcular_impuesto(monto): Asumimos 16%
-CREATE FUNCTION dbo.fn_calcular_impuesto (@monto DECIMAL(10,2))
-RETURNS DECIMAL(10,2)
-AS
-BEGIN
-    DECLARE @impuesto DECIMAL(10,2);
-    -- 16% se multiplica por 0.16
-    SET @impuesto = @monto * 0.16;
-    RETURN ISNULL(@impuesto, 0);
-END;
 GO
 
--- 2. fn_clasificar_ingreso(monto): Diamante, Oro o Plata
-CREATE FUNCTION dbo.fn_clasificar_ingreso (@monto DECIMAL(10,2))
-RETURNS NVARCHAR(50)
-AS
-BEGIN
-    DECLARE @clasificacion NVARCHAR(50);
-
-    IF @monto > 1000
-        SET @clasificacion = 'Diamante';
-    ELSE IF @monto > 500
-        SET @clasificacion = 'Oro';
-    ELSE
-        SET @clasificacion = 'Plata';
-
-    RETURN @clasificacion;
-END;
-GO
-
--- 3. fn_calcular_reputacion(idCreador): Fórmula con tope de 100
-CREATE FUNCTION dbo.fn_calcular_reputacion (@idCreador INT)
-RETURNS DECIMAL(10,2)
-AS
-BEGIN
-    DECLARE @suscriptorTotal INT = 0;
-    DECLARE @reaccionesTotalUltMes INT = 0;
-    DECLARE @antiguedadMeses INT = 0;
-    DECLARE @reputacion DECIMAL(10,2) = 0;
-
-    -- Total Suscriptores (Contamos IDs distintos)
-    SELECT @suscriptorTotal = COUNT(DISTINCT s.idUsuario)
-    FROM NivelSuscripcion ns
-    INNER JOIN Suscripcion s ON ns.id = s.idNivel
-    WHERE ns.idCreador = @idCreador AND s.estado = 'Activa';
-
-    -- Total Reacciones Último Mes
-    SELECT @reaccionesTotalUltMes = COUNT(urp.idUsuario)
-    FROM Publicacion p
-    INNER JOIN UsuarioReaccionPublicacion urp ON p.id = urp.idPublicacion
-    WHERE p.idCreador = @idCreador 
-      AND DATEDIFF(MONTH, urp.fecha_reaccion, GETDATE()) = 0;
-
-    -- Antigüedad Meses
-    SELECT @antiguedadMeses = DATEDIFF(MONTH, u.fecha_registro, GETDATE())
-    FROM Creador c
-    INNER JOIN Usuario u ON c.idUsuario = u.id
-    WHERE c.idUsuario = @idCreador;
-
-    -- Fórmula matemática
-    SET @reputacion = (@suscriptorTotal * 0.5) + (@reaccionesTotalUltMes * 0.1) + (@antiguedadMeses * 2.0);
-
-    -- Tope máximo de 100 puntos
-    IF @reputacion > 100.00
-        SET @reputacion = 100.00;
-
-    RETURN ISNULL(@reputacion, 0);
-END;
-GO
 
 -- C. Triggers
 
@@ -377,7 +445,7 @@ GO
 -- precio anterior (para evitar errores de dedo o fraudes). Si el cambio es brusco, cancelar la operación y levantar un error.
 GO
 
-CREATE TRIGGER trg_Auditoria_Precios
+CREATE OR ALTER TRIGGER trg_Auditoria_Precios
 ON NivelSuscripcion
 AFTER UPDATE
 AS
@@ -410,7 +478,7 @@ END;
 -- levantar un error "Contenido restringido por edad".
 GO
 
-CREATE TRIGGER trg_Proteccion_Menores
+CREATE OR ALTER TRIGGER trg_Proteccion_Menores
 ON Suscripcion
 AFTER INSERT
 AS
