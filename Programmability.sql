@@ -97,10 +97,125 @@ GO;
 --     ○ Todo debe ocurrir dentro de una transacción atómica.
 
 CREATE OR ALTER PROCEDURE sp_publicar_con_etiquetas
+    @idCreador INT,
+    @titulo VARCHAR(255),
+    @es_publica BIT,
+    @tipo_contenido VARCHAR(10),
+    @etiquetas VARCHAR(MAX), -- Cadena de etiquetas (p.ej: "Gaming,RPG,Retro")
     
+    -- Parámetros específicos (pueden ser nulos dependiendo del tipo de contenido elegido)
+    @video_duracion_seg INT = NULL,
+    @video_resolucion VARCHAR(10) = NULL,
+    @video_url VARCHAR(MAX) = NULL,
+    
+    @texto_html VARCHAR(MAX) = NULL,
+    @texto_resumen VARCHAR(500) = NULL,
+    
+    @imagen_ancho INT = NULL,
+    @imagen_alto INT = NULL,
+    @imagen_formato VARCHAR(20) = NULL,
+    @imagen_alt VARCHAR(255) = NULL,
+    @imagen_url VARCHAR(MAX) = NULL
 AS
 BEGIN
+    SET NOCOUNT ON;
+    
+    -- Declaramos variables internas a usar durante las transacciones
+    DECLARE @idPublicacionInsertada INT;
+    DECLARE @nombreEtiquetaActual VARCHAR(50);
+    DECLARE @idEtiquetaActual INT;
 
+    -- Inicio de Transacción Atómica
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -- 1. Insertamos en la tabla padre: Publicacion
+        INSERT INTO Publicacion (idCreador, titulo, es_publica, tipo_contenido, fecha_publicacion)
+        VALUES (@idCreador, @titulo, @es_publica, @tipo_contenido, GETDATE());
+
+        -- Obtenemos el ID de la publicación recién creada usando SCOPE_IDENTITY()
+        SET @idPublicacionInsertada = SCOPE_IDENTITY();
+
+        -- 2. Insertamos en las tablas hijas según el tipo de contenido
+        IF @tipo_contenido = 'VIDEO'
+        BEGIN
+            INSERT INTO Video (idPublicacion, duracion_seg, resolucion, url_stream)
+            VALUES (@idPublicacionInsertada, @video_duracion_seg, @video_resolucion, @video_url);
+        END
+        ELSE IF @tipo_contenido = 'TEXTO'
+        BEGIN
+            INSERT INTO Texto (idPublicacion, contenido_html, resumen_gratuito)
+            VALUES (@idPublicacionInsertada, @texto_html, @texto_resumen);
+        END
+        ELSE IF @tipo_contenido = 'IMAGEN'
+        BEGIN
+            INSERT INTO Imagen (idPublicacion, ancho, alto, formato, alt_text, url_imagen)
+            VALUES (@idPublicacionInsertada, @imagen_ancho, @imagen_alto, @imagen_formato, @imagen_alt, @imagen_url);
+        END
+
+        -- 3. Procesamiento de la cadena de Etiquetas divididas por comas
+        IF LTRIM(RTRIM(@etiquetas)) <> ''
+        BEGIN
+            -- Se usa STRING_SPLIT (disponible en SQL Server 2016+) para convertir el string en filas
+            -- Usamos un cursor para iterar por cada etiqueta de la lista
+            DECLARE cur_Etiquetas CURSOR FOR 
+            SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@etiquetas, ',');
+
+            OPEN cur_Etiquetas;
+            FETCH NEXT FROM cur_Etiquetas INTO @nombreEtiquetaActual;
+
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                -- Ignoramos etiquetas vacías que el usuario pudo haber dejado como p.ej "Gaming,,Retro"
+                IF @nombreEtiquetaActual <> ''
+                BEGIN
+                    -- Reseteamos el ID a nulo por seguridad en el loop
+                    SET @idEtiquetaActual = NULL;
+
+                    -- Buscamos a ver si esta etiqueta ya existe en el catálogo general
+                    SELECT @idEtiquetaActual = id FROM Etiqueta WHERE nombre = @nombreEtiquetaActual;
+
+                    -- Si la etiqueta No existe (es la primera vez que la vemos), la creamos
+                    IF @idEtiquetaActual IS NULL
+                    BEGIN
+                        INSERT INTO Etiqueta (nombre) VALUES (@nombreEtiquetaActual);
+                        SET @idEtiquetaActual = SCOPE_IDENTITY();
+                    END
+
+                    -- Finalmente, amarramos la Publicación con la Etiqueta (que ya existía de antes o es nueva)
+                    -- Validamos que no se intente insertar la misma etiqueta dos veces en un mismo post
+                    IF NOT EXISTS (SELECT 1 FROM PublicacionEtiqueta WHERE idPublicacion = @idPublicacionInsertada AND idEtiqueta = @idEtiquetaActual)
+                    BEGIN
+                        INSERT INTO PublicacionEtiqueta (idPublicacion, idEtiqueta) 
+                        VALUES (@idPublicacionInsertada, @idEtiquetaActual);
+                    END
+                END
+
+                -- Siguiente palabra en la lista
+                FETCH NEXT FROM cur_Etiquetas INTO @nombreEtiquetaActual;
+            END
+
+            -- Limpieza del Cursor de memoria
+            CLOSE cur_Etiquetas;
+            DEALLOCATE cur_Etiquetas;
+        END
+
+        -- Si no hubo ningún problema, el código llega hasta aquí para comprometer la transacción
+        COMMIT TRANSACTION;
+
+    END TRY
+    BEGIN CATCH
+        -- Si sucede CUALQUIER error en los pasos anteriores, se cancelan las inserciones de las 4 tablas a la vez. (Rolbback)
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+        -- Lanzamos el error original pa' que el usuario lo vea
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+
+        RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
+    END CATCH
 END;
 
 GO;
